@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: myQA - Q&A Application Backend API
+
+Globals:
+  Function:
+    Timeout: 10
+    Runtime: python3.13
+    MemorySize: 128
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref QATable
+
+Resources:
+  # REST API (API Gateway)
+  QAApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type'"
+        AllowOrigin: "'*'"
+
+  # Get questions list
+  GetQuestionsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-get-questions"
+      CodeUri: src/
+      Handler: get_questions.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref QATable
+      Events:
+        GetQuestions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref QAApi
+            Path: /questions
+            Method: get
+
+  # Get question detail + answers
+  GetQuestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-get-question"
+      CodeUri: src/
+      Handler: get_question.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref QATable
+      Events:
+        GetQuestion:
+          Type: Api
+          Properties:
+            RestApiId: !Ref QAApi
+            Path: /questions/{question_id}
+            Method: get
+
+  # Post question
+  PostQuestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-post-question"
+      CodeUri: src/
+      Handler: post_question.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QATable
+      Events:
+        PostQuestion:
+          Type: Api
+          Properties:
+            RestApiId: !Ref QAApi
+            Path: /questions
+            Method: post
+
+  # Post answer
+  PostAnswerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-post-answer"
+      CodeUri: src/
+      Handler: post_answer.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QATable
+      Events:
+        PostAnswer:
+          Type: Api
+          Properties:
+            RestApiId: !Ref QAApi
+            Path: /questions/{question_id}/answers
+            Method: post
+
+  # DynamoDB table
+  QATable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: myqa-table
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: question_id
+          AttributeType: S
+        - AttributeName: kind
+          AttributeType: S
+      KeySchema:
+        - AttributeName: question_id
+          KeyType: HASH
+        - AttributeName: kind
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: kind-index
+          KeySchema:
+            - AttributeName: kind
+              KeyType: HASH
+            - AttributeName: question_id
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${QAApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  QATableName:
+    Description: DynamoDB table name
+    Value: !Ref QATable
